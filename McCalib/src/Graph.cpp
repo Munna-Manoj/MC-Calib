@@ -127,6 +127,11 @@ std::vector<int> Graph::shortestPathBetween(const int v1, const int v2) {
 
   boost::dijkstra_shortest_paths(graph_, idx_to_vertex_[v1], distance_map);
 
+  // If v2 is unreachable from v1 return an empty path
+  if (p_map[idx_to_vertex_[v2]] == idx_to_vertex_[v2] && v1 != v2) {
+    return vert_in_path;
+  }
+
   vert_in_path = Graph::getPath(p_map, idx_to_vertex_[v1], idx_to_vertex_[v2]);
 
   return vert_in_path;
@@ -135,7 +140,8 @@ std::vector<int> Graph::shortestPathBetween(const int v1, const int v2) {
 /**
  * @brief Utility function to build a path after Dijkstra run
  *
- * @return vector of vertices belonging to the path
+ * @return vector of vertices belonging to the path. Returns an empty vector if
+ * the destination is unreachable.
  */
 std::vector<int> Graph::getPath(const std::vector<Vertex> &p_map,
                                 const Vertex &source,
@@ -144,7 +150,11 @@ std::vector<int> Graph::getPath(const std::vector<Vertex> &p_map,
   Vertex current = destination;
   while (current != source) {
     path.push_back(std::stoi(boost::get(boost::vertex_name, graph_, current)));
-    current = p_map[current];
+    Vertex parent = p_map[current];
+    if (parent == current) {
+      return std::vector<int>();
+    }
+    current = parent;
   }
   path.push_back(std::stoi(boost::get(boost::vertex_name, graph_, source)));
 
