@@ -3,13 +3,37 @@
 
 Toolbox described in the paper ["MC-Calib: A generic and robust calibration toolbox for multi-camera systems"](https://www.sciencedirect.com/science/article/abs/pii/S1077314221001818) ([RG](https://www.researchgate.net/publication/357801965_MC-Calib_A_generic_and_robust_calibration_toolbox_for_multi-camera_systems) for open access, [preprint](https://github.com/rameau-fr/MC-Calib/issues/4)).
 
+**This fork adds Double Sphere (DS) camera model support** for calibrating heterogeneous multi-camera systems (e.g., Brown + Double Sphere + Brown).
+
 ![](docs/illustration.png)
+
+---
+
+# Table of Contents
+
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration Reference](#configuration-reference)
+  - [Board Parameters](#board-parameters)
+  - [Camera Parameters](#camera-parameters)
+  - [Image Parameters](#image-parameters)
+  - [Optimization Parameters](#optimization-parameters)
+  - [Output Parameters](#output-parameters)
+- [Data Directory Structure](#data-directory-structure)
+- [Pre-calibrated Intrinsics File](#pre-calibrated-intrinsics-file)
+- [Supported Camera Models](#supported-camera-models)
+- [Common Scenarios](#common-scenarios)
+- [Output Files](#output-files)
+- [Troubleshooting](#troubleshooting)
+- [Citation](#citation)
+
+---
 
 # Installation
 
 For Windows users, follow [this installation guide](/docs/Windows.md).
 
-Requirements: Ceres, Boost, OpenCV {4.2.0, 4.5.5, 4.10.0, 4.11.0}, c++17 
+Requirements: Ceres, Boost, OpenCV {4.2.0, 4.5.5, 4.10.0, 4.11.0}, c++17
 
 - [Install](https://docs.docker.com/engine/install/) docker
 
@@ -29,7 +53,7 @@ Requirements: Ceres, Boost, OpenCV {4.2.0, 4.5.5, 4.10.0, 4.11.0}, c++17
                --volume="$PATH_TO_DATA:/home/MC-Calib/data" \
                bailool/mc-calib-prod:opencv4110
    ```
-      
+
 Compiling the code:
 
    ```bash
@@ -37,233 +61,523 @@ Compiling the code:
    mkdir build
    cd build
    cmake -DCMAKE_BUILD_TYPE=Release ..
-   make -j10  
+   make -j10
    ```
 
 Documentation is available [online](https://codedocs.xyz/rameau-fr/MC-Calib/). To generate local documentation, follow [the instructions](/docs/Documentation.md).
-      
-# Usage
 
-## Calibration procedure
+---
 
-1. **Generate your own Charuco boards**
-
-      If all your boards are similar (same number of squares in the x and y directions), you only need to specify the `number_x_square`, `number_y_square`, and `number_board`. Then you can run the Charuco board generator:
-      ```bash
-      ./apps/create_charuco_boards/generate_charuco ../configs/calib_param.yml
-      ```
-      If each board has a specific format (different number of squares), then you need to specify it in the fields 		`number_x_square_per_board` and `number_y_square_per_board`. For instance, if you want to use two boards of size [10x3] and [5x4] respectively, you have to set:
-      ```
-      number_board: 2 
-      number_x_square_per_board: [10,5]
-      number_y_square_per_board: [3,4]
-      ```
-      A sample of Charuco boards is provided in [board_samples](docs/board_samples).
-      Note: the board images are saved to the root folder where the code is executed.
-
-2. **Print your boards**
-
-3. **Measure the size of the squares on your boards**
-
-      If the boards have all the same square size, you just need to specify it in `square_size` and leave `square_size_per_board` empty. If each board has a different size, specify it in `square_size_per_board`. For instance, `square_size_per_board: [1, 25]` means that the first and second boards are composed of square of size `0.1cm` and `0.25cm` respectively. Note that the square size can be in any unit you prefer (m, cm, inch, etc.) and the resulting calibration will also be expressed in this unit.
-
-4. **Acquire your images**
-
-      MC-Calib has been designed for synchronized cameras, therefore, you have to make sure that all the cameras in the rig capture images at the exact same time. Additionally, this toolbox has been designed and tested for global shutter cameras, therefore we cannot guarantee highly accurate results if you are using rolling shutter sensors. For high-quality calibration, make sure to have a limited quantity of motion blur during your sequence.
-
-5. **Prepare your video sequences**
-
-      The images extracted from each camera have to be stored in different folders with a common prefix followed by a three digits index (starting from 001). For instance, if two cameras are used, the folder can be called: 'Cam_001' and 'Cam_002'. 
-
-6. **Setup the configuration file for your system**
-
-	* *Set the number of cameras and cameras' types:*
-
-      The number of cameras to be calibrated have to be specified in the field `number_camera`.
-      If you are calibrating a homogeneous camera system you can specify the camera type with `distortion_model`: `0` signifies that all your cameras are perspective (Brown distortion model) and a `1` will use the Kannala distortion model (fisheye).
-      If you are calibrating a hybrid vision system (composed of both fisheye and perspective cameras), you need to specify the type of distortion model you wish to use in the vector `distortion_per_camera`.
-
-	* *Set the image path:*
-
-      You need to specify the folder where the images have been stored in the field `root_path` for instance `"../Data/Image_folder/"`.
-
-	* *Set the outputs:*
-
-      By default, MC-Calib will generate the camera calibration results, the reprojection error log, the 3D object structure, detected keypoints, and the pose of the object for each frame where it has been detected. Additionally, you can save the detection and reprojection images by setting `save_detection` and `save_reprojection` to `1`.
-
-	* *Using only certain boards:*
-
-      If you prepared a large number of calibration objects but only a few appear in your calibration sequence, you can specify the list of boards' indexes in `boards_index`. Specifying the board indexes avoids trying to detect all the boards and will speed up your calibration.
-
-	* *Advanced setup:*
-
-      For a general calibration setup, for the sake of robustness, we recommend setting `min_perc_pts` to at least 0.4 (40% of the points of the board should appear to be considered). However, in the case of calibration of limited field-of-view overlapping with a single board, this parameter can be reduced significantly. Our automatic colinear points check should avoid most degenerated configurations.
-      The provided example configuration files contain a few additional parameters which can be tuned. Letting these parameters by default should lead to a correct calibration of your system, but you can adjust them if needed. These parameters are quite self explicit and described in the configuration files.
-
-7. **Run the calibration**
-
-	```bash
-	./apps/calibrate/calibrate ../configs/calib_param.yml
-	```
-
-8. **Run post-calibration analysis**
-
-	```bash
-	python3 python_utils/post_calibration_analysis.py -d save_path_from_calib_param.yml
-	```
-
-## Calibration file
-
-For multiple camera calibration configuration examples see `configs/*.yml`.  For easier start, just duplicate the most relevant setup and fill with details.
+# Quick Start
 
 ```bash
-######################################## Boards Parameters ###################################################
-number_x_square: 5         # number of squares in the X direction
-number_y_square: 5         # number of squares the Y direction
-resolution_x: 500          # horizontal resolution in pixel
-resolution_y: 500          # vertical resolution in pixel
-length_square: 0.04        # parameters on the marker (can be kept as it is)
-length_marker: 0.03        # parameters on the marker (can be kept as it is)
-number_board: 3            # number of boards used for calibration (for overlapping camera 1 is enough ...)
-boards_index: []           # leave it empty [] if the board index are ranging from zero to number_board; example of usage boards_index: [5,10 <-- only two board with index 5/10
-square_size: 0.192         # size of each square of the board in cm/mm/whatever you want
+# 1. Prepare your config file (see Configuration Reference below)
+# 2. Run calibration
+./apps/calibrate/calibrate path/to/your_config.yml
 
-############# Boards Parameters for different board size (leave empty if all boards have the same size) #################
+# 3. (Optional) Post-calibration analysis
+python3 python_utils/post_calibration_analysis.py -d path/to/save_path
+```
+
+---
+
+# Configuration Reference
+
+The configuration file is a YAML file that controls every aspect of the calibration. Below is a **complete field-by-field reference** with explanations, valid values, and tips.
+
+## Board Parameters
+
+These fields describe the ChArUco calibration boards you printed and are using.
+
+```yaml
+######################################## Board Parameters ########################################
+
+number_board: 2
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `number_board` | int | Yes | **How many distinct ChArUco boards you are using.** Each board has a unique set of ArUco marker IDs. If you printed 2 different boards, set this to `2`. Even if only 1 board appears in most frames, set this to the total number of distinct boards in your setup. |
+
+```yaml
+boards_index: []
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `boards_index` | list of int | Yes | **Which board IDs to detect.** Leave empty `[]` if your boards have sequential IDs starting from 0 (i.e., board 0, board 1, ..., board N-1). If you only want to detect specific boards (e.g., boards 5 and 10 out of many), use `[5, 10]`. This is useful when you have many printed boards but only a few appear in your calibration images -- it speeds up detection by skipping boards that aren't present. |
+
+> **How board IDs work:** Each ChArUco board is assigned a unique range of ArUco marker IDs. Board 0 gets the first batch, board 1 gets the next batch, etc. The `boards_index` tells MC-Calib which boards to look for. The marker ID ranges are determined by the board dimensions and dictionary size.
+
+```yaml
+number_x_square: 7
+number_y_square: 5
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `number_x_square` | int | Yes | **Number of squares in the horizontal (X) direction** of your ChArUco board. Count all squares across one row, including both black and white squares. For a 7x5 board, this is `7`. |
+| `number_y_square` | int | Yes | **Number of squares in the vertical (Y) direction.** Count all squares down one column. For a 7x5 board, this is `5`. |
+
+> **Important:** These are the number of **squares**, not the number of inner corners. A 7x5 square board produces a 6x4 grid of inner corners (one fewer in each direction).
+
+```yaml
+length_square: 0.04
+length_marker: 0.03
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `length_square` | float | Yes | **Ratio parameter for ChArUco board generation.** This controls the relative size of the checkerboard square when generating the board image. For standard boards, `0.04` works well. This does NOT need to match the physical printed size -- it's a generation parameter only. |
+| `length_marker` | float | Yes | **Ratio parameter for the ArUco marker inside each square.** Must be smaller than `length_square`. For standard boards, `0.03` works well. The ratio `length_marker / length_square` determines how much of each square the ArUco marker fills. |
+
+> **Common confusion:** `length_square` and `length_marker` are NOT the physical measurements of your printed board. They are parameters for the ChArUco board generator and ArUco detector. Keep them at `0.04` and `0.03` respectively unless you generated your boards with different values.
+
+```yaml
+square_size: 54
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `square_size` | float | Yes | **Physical size of one square on your printed board**, measured with a ruler. The unit can be anything (mm, cm, inches) -- all calibration results will be in the same unit. For example, if each square is 54mm, set `square_size: 54` and your extrinsics will be in mm. |
+
+> **Tip:** Measure accurately! This directly affects the scale of your extrinsic calibration. Use calipers if possible.
+
+### Per-Board Overrides (for boards of different sizes)
+
+If all your boards have the same dimensions and square size, leave these empty:
+
+```yaml
 number_x_square_per_board: []
 number_y_square_per_board: []
 square_size_per_board: []
-
-######################################## Camera Parameters ###################################################
-distortion_model: 0         # 0:Brown (perspective) // 1: Kannala (fisheye)
-distortion_per_camera : []  # specify the model per camera, #leave "distortion_per_camera" empty [] if they all follow the same model (make sure that the vector is as long as cameras nb)
-number_camera: 2            # number of cameras in the rig to calibrate
-refine_corner: 1            # activate or deactivate the corner refinement
-min_perc_pts: 0.5           # min percentage of points visible to assume a good detection
-
-cam_params_path: "None"     # file with cameras intrinsics to initialize the intrinsic, write "None" if no initialization available 
-
-######################################## Images Parameters ###################################################
-root_path: "../data/Synthetic_calibration_image/Scenario_1/Images"
-cam_prefix: "Cam_"
-keypoints_path: "None"      # "path_to/detected_keypoints_data.yml" to save time on keypoint detection
-
-######################################## Optimization Parameters #############################################
-quaternion_averaging: 1     # use Quaternion Averaging or median for average rotation
-ransac_threshold: 10        # RANSAC threshold in pixel (keep it high just to remove strong outliers)
-number_iterations: 1000     # Max number of iterations for the non linear refinement
-
-######################################## Hand-eye method #############################################
-he_approach: 0              #0: bootstrapped he technique, 1: traditional he
-
-######################################## Output Parameters ###################################################
-save_path: "experiments/Synthetic_calibration_image/Scenario_1"
-save_detection: 1
-save_reprojection: 1
-camera_params_file_name: "" # "name.yml"
+resolution_x_per_board: []
+resolution_y_per_board: []
 ```
 
-## Output explanation
+If boards differ, specify per-board values. Example with 3 differently-sized boards:
 
-The calibration toolbox automatically outputs four ```*.yml``` files. To illustrate them, we propose to display the results obtained from the calibration of a hybrid stereo-vision system.
+```yaml
+number_board: 3
+number_x_square_per_board: [5, 7, 6]
+number_y_square_per_board: [7, 4, 6]
+square_size_per_board: [14, 13.8, 16.3]       # physical square size per board
+resolution_x_per_board: [1000, 500, 1000]      # board image generation resolution
+resolution_y_per_board: [1000, 500, 1000]
+```
 
-* **Camera parameters:** `calibrated_cameras_data.yml`
+| Field | Type | Description |
+|-------|------|-------------|
+| `number_x_square_per_board` | list | X-squares for each board. Length must equal `number_board`. |
+| `number_y_square_per_board` | list | Y-squares for each board. Length must equal `number_board`. |
+| `square_size_per_board` | list | Physical square size for each board. |
+| `resolution_x_per_board` | list | Horizontal pixel resolution for generated board image. |
+| `resolution_y_per_board` | list | Vertical pixel resolution for generated board image. |
 
-   ```bash
-   %YAML:1.0
-   ---
-   nb_camera: 2 
-   camera_0: # all the calibration parameters (intrinsic/extrinsic) for the camera 0
-      camera_matrix: !!opencv-matrix # 3x3 intrinsic matrix
-         rows: 3
-         cols: 3
-         dt: d
-         data: [ 6.9057886528642052e+02, 0., 6.5114341701043156e+02, 0.,
-            6.8919862105007201e+02, 2.6741231181725999e+02, 0., 0., 1. ]
-      distortion_vector: !!opencv-matrix # 1x5 distortion vector (Brown model here)
-         rows: 1
-         cols: 5
-         dt: d
-         data: [ -5.5592652556282401e-02, 1.2691061778374907e-01,
-            -2.4976766901851363e-04, 1.1847248726536302e-03,
-            -6.7785776099559991e-02 ]
-      distortion_type: 0 # type of distortion model (0: perspective, 1: fisheye)
-      camera_group: 0 #Camera group in which this camera belong, if the calibration has been sucessful, all camera should belong to the group 0
-      img_width: 1280 #image size
-      img_height: 512
-      camera_pose_matrix: !!opencv-matrix
-         rows: 4
-         cols: 4
-         dt: d
-         data: [ 1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0., 0., 0.,
-            1. ] #4x4 extrinsic matrix (for camera 0, it is the identity because it is the reference)
-   camera_1: # all the calibration parameters (intrinsic/extrinsic) for the camera 1
-      camera_matrix: !!opencv-matrix # 3x3 intrinsic matrix for camera 1
-         rows: 3
-         cols: 3
-         dt: d
-         data: [ 3.3467577884661034e+02, 0., 6.3270889699552083e+02, 0.,
-            3.3407723815119016e+02, 2.6650518594457941e+02, 0., 0., 1. ]
-      distortion_vector: !!opencv-matrix # 1x4 distortion vector (fisheye model)
-         rows: 1
-         cols: 4
-         dt: d
-         data: [ 1.1763357579105141e-02, -5.1797112353852174e-03,
-            2.6315580610037459e-03, 0. ]
-      distortion_type: 1 # type of distortion model (0: perspective, 1: fisheye)
-      camera_group: 0
-      img_width: 1280
-      img_height: 512
-      camera_pose_matrix: !!opencv-matrix #4x4 extrinsic matrix
-         rows: 4
-         cols: 4
-         dt: d
-         data: [ 9.9999074801577947e-01, 7.7896180494682642e-04,
-            -4.2304965841050025e-03, 1.9839157514973714e+01,
-            -7.9020195036245652e-04, 9.9999616084980592e-01,
-            -2.6559116188004227e-03, 6.1882118248103253e-02,
-            4.2284114888848610e-03, 2.6592299929997965e-03,
-            9.9998752443824268e-01, 1.8600285922272908e+00, 0., 0., 0., 1. ]  #4x4 extrinsic matrix, expressed in camera 0 referencial
-   ```
+> When per-board arrays are provided, they override `number_x_square`, `number_y_square`, and `square_size`.
 
-* **Object 3D structure:** `calibrated_objects_data.yml`
+---
 
-   ```bash
-   %YAML:1.0
-   ---
-   object_0: #object index (if all boards have been seen, a single object should exist)
-      points: !!opencv-matrix #3xn 3D structure of the object
-         rows: 3
-         cols: 16
-         dt: f
-         data: [ 0., 9.14999962e+00, 1.82999992e+01, 2.74499989e+01, 0.,
-            9.14999962e+00, 1.82999992e+01, 2.74499989e+01, 0.,
-            9.14999962e+00, 1.82999992e+01, 2.74499989e+01, 0.,
-            9.14999962e+00, 1.82999992e+01, 2.74499989e+01, 0., 0., 0., 0.,
-            9.14999962e+00, 9.14999962e+00, 9.14999962e+00, 9.14999962e+00,
-            1.82999992e+01, 1.82999992e+01, 1.82999992e+01, 1.82999992e+01,
-            2.74499989e+01, 2.74499989e+01, 2.74499989e+01, 2.74499989e+01,
-            0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0. ]
-   ```
+## Camera Parameters
 
-* **Object's poses:** `calibrated_objects_pose_data.yml`
+```yaml
+number_camera: 3
+```
 
-   The pose of the object (for all frames where boards are visible) with respect to the reference camera is provided in this file as a 6xn array. Each row contains the Rodrigues angle-axis (3 floats) followed by the translation vector (3 floats).
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `number_camera` | int | Yes | **Total number of cameras in your rig.** MC-Calib expects exactly this many camera folders in `root_path`. |
 
-* **Reprojection error log:** `reprojection_error_data.yml`
+```yaml
+distortion_model: 0
+```
 
-   The reprojection error for each corner, camera and frame.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `distortion_model` | int | Yes | **Default distortion model for all cameras.** `0` = Brown (standard perspective, 5 distortion coefficients), `1` = Kannala-Brandt (fisheye, 4 coefficients), `2` = Double Sphere (wide-angle/fisheye, 2 parameters: xi, alpha). This is used for all cameras unless `distortion_per_camera` overrides it. |
 
-   Samples of python code to read these files are provided in ```python_utils```
+```yaml
+distortion_per_camera: [0, 2, 0]
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `distortion_per_camera` | list of int | No | **Per-camera distortion model override.** Leave empty `[]` if all cameras use the same model (specified by `distortion_model`). For heterogeneous systems, specify the model for each camera. Length must equal `number_camera`. Example: `[0, 2, 0]` means camera 0 = Brown, camera 1 = Double Sphere, camera 2 = Brown. |
+
+> **Supported model IDs:**
+> | ID | Model | Parameters | Best For |
+> |----|-------|-----------|----------|
+> | `0` | Brown | k1, k2, p1, p2, k3 | Standard perspective cameras |
+> | `1` | Kannala-Brandt | k1, k2, k3, k4 | Fisheye cameras |
+> | `2` | Double Sphere | xi, alpha | Wide-angle / fisheye cameras (closed-form inverse) |
+
+```yaml
+refine_corner: 1
+min_perc_pts: 0.5
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `refine_corner` | int (0 or 1) | Yes | **Enable sub-pixel corner refinement.** `1` = enabled (recommended), `0` = disabled. Improves accuracy but slightly slower. |
+| `min_perc_pts` | float (0.0-1.0) | Yes | **Minimum percentage of board corners that must be visible** for a detection to be considered valid. `0.5` means at least 50% of the board's corners must be detected. Lower this (e.g., `0.3`) if cameras have limited overlap and can only see part of the board. |
+
+```yaml
+cam_params_path: "None"
+fix_intrinsic: 0
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `cam_params_path` | string | Yes | **Path to a YAML file with pre-calibrated intrinsics.** Set to `"None"` if you want MC-Calib to estimate intrinsics from scratch. If you already know your camera intrinsics (from a separate calibration), provide the path here. See [Pre-calibrated Intrinsics File](#pre-calibrated-intrinsics-file) for the format. |
+| `fix_intrinsic` | int (0 or 1) | Yes | **Freeze intrinsics during optimization.** `0` = intrinsics are estimated and refined (default). `1` = intrinsics from `cam_params_path` are loaded and held fixed -- only extrinsics are optimized. **You MUST provide `cam_params_path` when `fix_intrinsic: 1`.** |
+
+> **When to use `fix_intrinsic: 1`:**
+> - When you have high-quality pre-calibrated intrinsics (e.g., from a dedicated single-camera calibration with many images)
+> - When using the Double Sphere model -- the DS heuristic initialization (fx = 0.8 * image_width) may not converge well for all lenses. Pre-calibrating DS intrinsics separately and freezing them here gives much better results
+> - When you only care about extrinsic calibration (relative camera poses)
+
+---
+
+## Image Parameters
+
+```yaml
+root_path: "../data/my_images"
+cam_prefix: "cam_"
+keypoints_path: "None"
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `root_path` | string | Yes | **Path to the root directory containing camera image folders.** Can be relative (to the build directory) or absolute. This directory must contain exactly `number_camera` subdirectories named `{cam_prefix}001`, `{cam_prefix}002`, etc. |
+| `cam_prefix` | string | Yes | **Prefix for camera folder names.** Default is `"Cam_"`. The folders must be named `{cam_prefix}001`, `{cam_prefix}002`, ..., `{cam_prefix}NNN`. |
+| `keypoints_path` | string | No | **Path to a previously saved keypoints file** for faster re-runs. Set to `"None"` or `""` on first run. After the first run, MC-Calib saves detected keypoints; point this to that file to skip re-detection. |
+
+> **Camera numbering is 1-based!** Folders must start from `001`, not `000`. For 3 cameras with `cam_prefix: "cam_"`:
+> ```
+> root_path/
+>   cam_001/    # First camera images
+>     000000.png
+>     000001.png
+>     ...
+>   cam_002/    # Second camera images
+>     000000.png
+>     000001.png
+>     ...
+>   cam_003/    # Third camera images
+>     000000.png
+>     000001.png
+>     ...
+> ```
+
+> **Image filenames must be identical** across camera folders. MC-Calib matches frames by filename (sorted alphabetically). If cam_001 has `000000.png`, cam_002 and cam_003 must also have `000000.png` for that frame.
+
+---
+
+## Optimization Parameters
+
+```yaml
+quaternion_averaging: 1
+ransac_threshold: 10
+number_iterations: 1000
+he_approach: 0
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `quaternion_averaging` | int (0 or 1) | Yes | **Rotation averaging method.** `1` = Quaternion averaging (recommended), `0` = Median rotation. |
+| `ransac_threshold` | float | Yes | **RANSAC inlier threshold in pixels** for initial pose estimation. Higher values are more tolerant of outliers. `10` is a good default. Lower to `3-5` if you have very precise detections and want to be stricter. |
+| `number_iterations` | int | Yes | **Maximum iterations for Ceres non-linear refinement.** `1000` is usually sufficient. Increase if the solver reports it didn't converge. |
+| `he_approach` | int (0 or 1) | Yes | **Hand-eye calibration approach.** `0` = Bootstrapped technique (recommended, more robust), `1` = Traditional approach. |
+
+---
+
+## Output Parameters
+
+```yaml
+save_path: "../results"
+save_detection: 1
+save_reprojection: 1
+camera_params_file_name: ""
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `save_path` | string | Yes | **Directory where all output files are saved.** Created automatically if it doesn't exist. |
+| `save_detection` | int (0 or 1) | Yes | **Save detection visualization images.** `1` = save images showing detected ChArUco corners overlaid on each frame. Useful for debugging detection issues. |
+| `save_reprojection` | int (0 or 1) | Yes | **Save reprojection visualization images.** `1` = save images showing reprojected points vs detected points. Essential for visually verifying calibration quality. |
+| `camera_params_file_name` | string | No | **Custom filename for the output camera parameters.** Leave empty `""` to use the default `calibrated_cameras_data.yml`. Set to e.g., `"camera_params.yml"` for a custom name. |
+
+---
+
+# Data Directory Structure
+
+Here is the expected directory layout for a 3-camera system:
+
+```
+root_path/                          # Pointed to by root_path in config
+  cam_001/                          # Camera 1 images (prefix + 3-digit index)
+    000000.png                      # Frame 0
+    000001.png                      # Frame 1
+    000002.png                      # ...
+    ...
+  cam_002/                          # Camera 2 images
+    000000.png                      # Same filenames as cam_001
+    000001.png
+    ...
+  cam_003/                          # Camera 3 images
+    000000.png
+    000001.png
+    ...
+  precalibrated_intrinsics.yml      # (Optional) Pre-calibrated intrinsics
+
+save_path/                          # Created by MC-Calib
+  calibrated_cameras_data.yml       # Camera intrinsics + extrinsics
+  calibrated_objects_data.yml       # 3D board structure
+  calibrated_objects_pose_data.yml  # Board poses per frame
+  reprojection_error_data.yml       # Per-corner reprojection errors
+  convergence_00X.png               # (if save_reprojection: 1) reprojection images
+  convergence_detection_00X.png     # (if save_detection: 1) detection images
+```
+
+> **Key rules:**
+> - Camera folders use **3-digit** indices starting from **001** (not 000)
+> - All camera folders must have **matching filenames** for synchronized frames
+> - Images can be `.png`, `.jpg`, `.bmp`, etc. (anything OpenCV can read)
+> - The `cam_prefix` in config must match the folder names (e.g., `"Cam_"` -> `Cam_001/`)
+
+---
+
+# Pre-calibrated Intrinsics File
+
+When using `fix_intrinsic: 1` or providing initial intrinsics via `cam_params_path`, the file must follow this OpenCV YAML format:
+
+### Brown (Perspective) Camera
+
+```yaml
+camera_0:
+   camera_matrix: !!opencv-matrix
+      rows: 3
+      cols: 3
+      dt: d
+      data: [ fx, 0., cx,
+              0., fy, cy,
+              0., 0., 1. ]
+   distortion_vector: !!opencv-matrix
+      rows: 1
+      cols: 5
+      dt: d
+      data: [ k1, k2, p1, p2, k3 ]
+```
+
+### Double Sphere Camera
+
+```yaml
+camera_1:
+   camera_matrix: !!opencv-matrix
+      rows: 3
+      cols: 3
+      dt: d
+      data: [ fx, 0., cx,
+              0., fy, cy,
+              0., 0., 1. ]
+   distortion_vector: !!opencv-matrix
+      rows: 1
+      cols: 2
+      dt: d
+      data: [ xi, alpha ]
+```
+
+### Kannala-Brandt (Fisheye) Camera
+
+```yaml
+camera_2:
+   camera_matrix: !!opencv-matrix
+      rows: 3
+      cols: 3
+      dt: d
+      data: [ fx, 0., cx,
+              0., fy, cy,
+              0., 0., 1. ]
+   distortion_vector: !!opencv-matrix
+      rows: 1
+      cols: 4
+      dt: d
+      data: [ k1, k2, k3, k4 ]
+```
+
+> **Camera indices are 0-based** in the intrinsics file (`camera_0`, `camera_1`, ...) even though image folders are 1-based (`cam_001`, `cam_002`, ...). `camera_0` corresponds to `cam_001`.
+
+> **DS parameter xi** must be in range [-1, 1] and **alpha** in [0, 1].
+
+---
+
+# Supported Camera Models
+
+## Brown (Perspective) -- `distortion_model: 0`
+
+Standard pinhole camera with radial and tangential distortion. 5 distortion parameters: `k1, k2, p1, p2, k3`.
+
+**Best for:** Standard cameras, webcams, industrial cameras with moderate field of view.
+
+## Kannala-Brandt (Fisheye) -- `distortion_model: 1`
+
+Equidistant fisheye model with 4 parameters: `k1, k2, k3, k4`.
+
+**Best for:** Fisheye cameras with OpenCV's fisheye module calibration.
+
+## Double Sphere -- `distortion_model: 2`
+
+Compact 6-parameter model (fx, fy, cx, cy, xi, alpha) with a closed-form inverse. From [Usenko et al. 2018](https://arxiv.org/abs/1807.08957).
+
+**Best for:** Wide-angle and fisheye cameras. Advantages over Kannala-Brandt:
+- Closed-form unprojection (no iterative solver needed)
+- Only 2 distortion parameters (xi, alpha) -- less overfitting risk
+- Smooth projection across the entire field of view
+
+**DS parameter guide:**
+| Parameter | Range | Meaning |
+|-----------|-------|---------|
+| `xi` | [-1, 1] | Controls the shape of the first sphere. `xi=0` reduces to a single-sphere model. |
+| `alpha` | [0, 1] | Blending between the two spheres. `alpha=0` reduces to pinhole. `alpha=0.5` is the transition point. |
+
+---
+
+# Common Scenarios
+
+## Scenario 1: Simple stereo (2 perspective cameras)
+
+```yaml
+number_camera: 2
+number_board: 1
+distortion_model: 0
+distortion_per_camera: []       # both cameras use Brown
+fix_intrinsic: 0                # estimate intrinsics
+cam_params_path: "None"
+```
+
+## Scenario 2: Heterogeneous stereo (perspective + fisheye)
+
+```yaml
+number_camera: 2
+distortion_model: 0
+distortion_per_camera: [0, 1]   # cam1=Brown, cam2=Kannala
+fix_intrinsic: 0
+cam_params_path: "None"
+```
+
+## Scenario 3: Heterogeneous 3-camera (Brown + Double Sphere + Brown)
+
+```yaml
+number_camera: 3
+distortion_model: 0
+distortion_per_camera: [0, 2, 0]   # Brown, DS, Brown
+fix_intrinsic: 1                    # freeze pre-calibrated intrinsics
+cam_params_path: "path/to/precalibrated_intrinsics.yml"
+```
+
+> **Recommended for DS cameras:** Pre-calibrate intrinsics separately and use `fix_intrinsic: 1`. The DS heuristic initialization may not converge for all lenses.
+
+## Scenario 4: Extrinsic-only calibration (known intrinsics)
+
+```yaml
+fix_intrinsic: 1
+cam_params_path: "path/to/known_intrinsics.yml"
+```
+
+## Scenario 5: Non-overlapping cameras with multiple boards
+
+```yaml
+number_board: 3
+boards_index: []                   # detect all 3 boards
+he_approach: 0                     # bootstrapped hand-eye
+number_camera: 4
+```
+
+> **For non-overlapping cameras:** You need multiple boards visible simultaneously in different cameras. MC-Calib uses hand-eye calibration to chain the transforms.
+
+---
+
+# Output Files
+
+After a successful calibration, MC-Calib generates these files in `save_path`:
+
+### `calibrated_cameras_data.yml` (or custom name)
+
+Contains intrinsics and extrinsics for every camera:
+
+```yaml
+nb_camera: 3
+camera_0:
+   camera_matrix: ...        # 3x3 intrinsic matrix [fx, 0, cx; 0, fy, cy; 0, 0, 1]
+   distortion_vector: ...    # distortion coefficients (5 for Brown, 4 for Kannala, 2 for DS)
+   distortion_type: 0        # 0=Brown, 1=Kannala, 2=Double Sphere
+   camera_group: 0           # should be 0 if calibration succeeded
+   img_width: 1280
+   img_height: 800
+   camera_pose_matrix: ...   # 4x4 transformation matrix (camera 0 = identity = reference)
+```
+
+> **camera_0 is always the reference frame** with an identity pose matrix. All other cameras' poses are expressed relative to camera_0.
+
+> **camera_group** indicates connected components. If all cameras are in group 0, the full chain of transforms was successfully estimated. Different group numbers mean some cameras couldn't be linked.
+
+### `calibrated_objects_data.yml`
+
+The refined 3D structure of each calibration board.
+
+### `calibrated_objects_pose_data.yml`
+
+The 6-DOF pose (Rodrigues rotation + translation) of each board in every frame where it was detected.
+
+### `reprojection_error_data.yml`
+
+Per-corner, per-camera, per-frame reprojection errors for detailed analysis.
+
+---
+
+# Troubleshooting
+
+### "No boards detected in camera X"
+- Check that your board dimensions (`number_x_square`, `number_y_square`) match the physical board
+- Ensure `length_square` and `length_marker` match the values used when generating the board
+- If using multiple boards, check that `boards_index` is set correctly
+- Enable `save_detection: 1` to visually inspect what's being detected
+
+### "Calibration diverges / huge reprojection error"
+- For DS cameras: use `fix_intrinsic: 1` with pre-calibrated intrinsics
+- Lower `min_perc_pts` if boards are only partially visible
+- Check that `square_size` is accurate (wrong scale = wrong extrinsics)
+- Try increasing `number_iterations`
+
+### "Camera X is in a different camera_group"
+- This means MC-Calib couldn't find a chain of co-visible boards linking this camera to the others
+- Solution: use more boards, or position boards so they're visible in overlapping camera pairs
+- For non-overlapping setups, use `he_approach: 0` with multiple boards
+
+### "Assertion failed: nb_camera > 0" or "nb_board > 0"
+- Check your YAML syntax -- OpenCV's YAML parser is strict
+- Ensure the file starts with `%YAML:1.0` and `---`
+
+### "No such file or directory: cam_001"
+- Camera folders must be 1-indexed (`cam_001`, not `cam_000`)
+- Check that `cam_prefix` matches your folder names exactly
+- Check that `root_path` is correct relative to the build directory
+
+### DS camera: "Images appear mirrored"
+- Some cameras (e.g., certain fisheye or special optics) produce horizontally flipped images
+- Pre-flip images with `cv2.flip(img, 1)` before running MC-Calib
+- Remember to flip the `cx` value in pre-calibrated intrinsics: `cx_flipped = image_width - 1 - cx_original`
+
+---
+
+# Contribution
+
+Please follow `docs/contributing.rst` when introducing changes.
 
 # Datasets
 The synthetic and real datasets acquired for this paper are freely available via the following links:
 - [Real Data](https://drive.google.com/file/d/143jdSi5fxUGj1iEGbTIQPfSqcOyuW-MR/view?usp=sharing)
 - [Synthetic Data](https://drive.google.com/file/d/1CxaXUbO4E9WmaVrYy5aMeRLKmrFB_ARl/view?usp=sharing)
-
-
-# Contribution
-
-Please follow `docs/contributing.rst` when introducing changes. 
 
 # Citation
 
@@ -281,5 +595,3 @@ author = {Francois Rameau and Jinsun Park and Oleksandr Bailo and In So Kweon},
 keywords = {Camera calibration, Multi-camera system},
 }
 ```
-
-
